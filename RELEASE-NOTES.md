@@ -10,6 +10,8 @@
 
 Put all three in one folder, double-click the EXE, and click “Extract and open RVC”. No PowerShell commands, Python/pip setup or model training is required; select your own `.pth` and matching `.index` after opening.
 
+Use all three files from this public release. Do not mix them with earlier private-release files; this public build has its own matched opener and checksums.
+
 For China-friendly accelerator links, use the table on the [download homepage](https://github.com/whyhea1/rvc-dynamic-f0-downloads#readme). These public downloads require no GitHub login or token; the EXE verifies both payload parts against the original SHA-256 values.
 
 ## Included feature

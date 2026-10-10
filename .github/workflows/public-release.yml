@@ -1,0 +1,179 @@
+name: Build and publish verified public Windows app
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Expand source snapshot and original extractor resources
+        shell: pwsh
+        run: |
+          Expand-Archive .build/RVC-Dynamic-F0-Licenses-and-Sources.zip build/companion
+          Expand-Archive build/companion/upstream-sources/RVC-Dynamic-F0-App-Source.zip build/app
+          New-Item -ItemType Directory -Force build/sevenzip | Out-Null
+          $Assembly = [System.Reflection.Assembly]::LoadFile((Resolve-Path .build/RVC-Dynamic-F0-Open.exe))
+          foreach ($Pair in @(
+            @("SevenZipExe", "7z.exe"),
+            @("SevenZipDll", "7z.dll"),
+            @("SevenZipLicense", "License.txt")
+          )) {
+            $InputStream = $Assembly.GetManifestResourceStream($Pair[0])
+            if ($null -eq $InputStream) { throw "Missing embedded resource: $($Pair[0])" }
+            $OutputStream = [System.IO.File]::Create((Join-Path (Resolve-Path build/sevenzip) $Pair[1]))
+            try { $InputStream.CopyTo($OutputStream) } finally { $InputStream.Dispose(); $OutputStream.Dispose() }
+          }
+      - name: Build fully bundled CUDA 11.8 runtime
+        shell: pwsh
+        run: |
+          $Pinned = Get-Content DEPENDENCIES.txt | Where-Object { $_ -and $_ -notmatch '^torch(audio)?==' }
+          $Pinned | Set-Content build/pinned-inference.txt
+          Push-Location build/app/RVC-Dynamic-F0
+          ./setup-windows.ps1 -Hardware cu118
+          if ($LASTEXITCODE -ne 0) { throw "Runtime setup failed" }
+          ./runtime/python.exe -m pip install -r ../../pinned-inference.txt --index-url https://pypi.org/simple
+          if ($LASTEXITCODE -ne 0) { throw "Version-pinned inference dependency installation failed" }
+          ./runtime/python.exe -m pip cache purge
+          ./runtime/python.exe -m pytest -q
+          if ($LASTEXITCODE -ne 0) { throw "Unit tests failed" }
+          ./runtime/python.exe -c "import torch, tkinter, soundfile, importlib.metadata as m; from infer import rtrvc; assert torch.__version__ == '2.7.1+cu118'; assert soundfile.__libsndfile_version__ == '1.2.2'; assert m.version('praat-parselmouth') == '0.4.7'; assert m.version('FreeSimpleGUI') == '5.1.1'; assert m.version('soxr') == '1.1.0'; root=tkinter.Tk(); root.update(); root.destroy(); print('Pinned runtime imports OK')"
+          if ($LASTEXITCODE -ne 0) { throw "Runtime check failed" }
+          ./runtime/python.exe tools/smoke_editor.py
+          if ($LASTEXITCODE -ne 0) { throw "Curve editor check failed" }
+          ./runtime/python.exe tools/smoke_main_gui.py
+          if ($LASTEXITCODE -ne 0) { throw "Main GUI check failed" }
+          ./runtime/python.exe -m pip freeze | Out-File -Encoding utf8 portable-dependencies.txt
+          Pop-Location
+      - name: Stage runtime and split complete GPU payload
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Expand-Archive build/companion/upstream-sources/RVC-Dynamic-F0-App-Source.zip build/staged
+          $App = "build/app/RVC-Dynamic-F0"
+          $Staged = "build/staged/RVC-Dynamic-F0"
+          Copy-Item "$App/runtime" "$Staged/runtime" -Recurse
+          Copy-Item "$App/assets/hubert_base" "$Staged/assets/hubert_base" -Recurse
+          Copy-Item "$App/assets/rmvpe" "$Staged/assets/rmvpe" -Recurse
+          Copy-Item "$App/portable-dependencies.txt" "$Staged/portable-dependencies.txt"
+          Push-Location $Staged
+          ./runtime/python.exe -s -c "import pathlib,sys; from infer import rtrvc; assert pathlib.Path(sys.prefix).resolve() == pathlib.Path('runtime').resolve(); print('Relocated runtime OK')"
+          if ($LASTEXITCODE -ne 0) { throw "Relocated runtime check failed" }
+          Pop-Location
+          Remove-Item "$App/runtime" -Recurse -Force
+          Get-ChildItem $Staged -Filter __pycache__ -Recurse -Directory | Remove-Item -Recurse -Force
+          Get-ChildItem $Staged -Filter .cache -Recurse -Directory | Remove-Item -Recurse -Force
+          $SevenZip = (Resolve-Path build/sevenzip/7z.exe).Path
+          & $SevenZip a -tzip -mx=3 dist/RVC-Dynamic-F0-Windows-cu118.zip ./build/staged/RVC-Dynamic-F0
+          if ($LASTEXITCODE -ne 0) { throw "GPU archive build failed" }
+          & $SevenZip t dist/RVC-Dynamic-F0-Windows-cu118.zip
+          if ($LASTEXITCODE -ne 0) { throw "Archive CRC check failed" }
+          $Zip = Get-Item dist/RVC-Dynamic-F0-Windows-cu118.zip
+          $InputStream = [System.IO.File]::OpenRead($Zip.FullName)
+          $Buffer = New-Object byte[] (8MB)
+          $Part = 1
+          try {
+            while ($InputStream.Position -lt $InputStream.Length) {
+              $PartPath = "{0}.{1:D3}" -f $Zip.FullName, $Part
+              $OutputStream = [System.IO.File]::Create($PartPath)
+              try {
+                $Written = 0L
+                while ($Written -lt 1800MB -and $InputStream.Position -lt $InputStream.Length) {
+                  $Count = $InputStream.Read($Buffer, 0, [int][Math]::Min($Buffer.Length, 1800MB - $Written))
+                  $OutputStream.Write($Buffer, 0, $Count)
+                  $Written += $Count
+                }
+              } finally { $OutputStream.Dispose() }
+              $Part++
+            }
+          } finally { $InputStream.Dispose() }
+          if ($Part -ne 3) { throw "Expected exactly two GPU payload parts" }
+          Remove-Item $Zip.FullName
+      - name: Compile matching native opener and prepare notices
+        shell: pwsh
+        run: |
+          $Hash1 = (Get-FileHash dist/RVC-Dynamic-F0-Windows-cu118.zip.001 -Algorithm SHA256).Hash.ToLower()
+          $Hash2 = (Get-FileHash dist/RVC-Dynamic-F0-Windows-cu118.zip.002 -Algorithm SHA256).Hash.ToLower()
+          $SourcePath = "build/companion/launcher-source/NativePortable.cs"
+          $Source = Get-Content $SourcePath -Raw
+          $Source = $Source.Replace("b0ede4e19f68ebac528b5aac1d8cb61a1e8fc8e0a7987f23428164ed88482d91", $Hash1)
+          $Source = $Source.Replace("5357b586f14752a9e2e0ef79311d84b8e0af96d650fa6e45610e5f8af3a02726", $Hash2)
+          if (-not $Source.Contains($Hash1) -or -not $Source.Contains($Hash2)) { throw "Native source hash replacement failed" }
+          [System.IO.File]::WriteAllText((Resolve-Path $SourcePath), $Source, [System.Text.UTF8Encoding]::new($false))
+          $SevenZip = (Resolve-Path build/sevenzip).Path
+          $Compiler = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          $Output = Join-Path (Resolve-Path dist) "RVC-Dynamic-F0-Open.exe"
+          & $Compiler /nologo /target:winexe /optimize+ /codepage:65001 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "/resource:$SevenZip\7z.exe,SevenZipExe" "/resource:$SevenZip\7z.dll,SevenZipDll" "/resource:$SevenZip\License.txt,SevenZipLicense" "/out:$Output" (Resolve-Path $SourcePath)
+          if ($LASTEXITCODE -ne 0) { throw "Native opener compile failed" }
+          Copy-Item .github/workflows/public-release.yml build/companion/launcher-source/public-release.yml
+          & "$SevenZip/7z.exe" a -tzip -mx=3 dist/RVC-Dynamic-F0-Licenses-and-Sources.zip ./build/companion/*
+          if ($LASTEXITCODE -ne 0) { throw "Source/notices archive failed" }
+          Copy-Item START-HERE.md, THIRD-PARTY-NOTICES.md, SOURCE-MANIFEST.json dist/
+          Get-ChildItem dist -File | ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name } | Set-Content dist/SHA256SUMS.txt
+      - name: Upload complete package to draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $Files = @(Get-ChildItem dist -File | ForEach-Object { $_.FullName })
+          gh release upload dynamic-f0-v0.1.1 @Files --repo '${{ github.repository }}' --clobber
+          if ($LASTEXITCODE -ne 0) { throw "Draft release upload failed" }
+  verify-and-publish:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download draft assets and check every checksum
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download dynamic-f0-v0.1.1 --repo '${{ github.repository }}' --dir downloaded
+          if ($LASTEXITCODE -ne 0) { throw "Release download failed" }
+          foreach ($Line in Get-Content downloaded/SHA256SUMS.txt) {
+            if ($Line -notmatch '^([a-f0-9]{64})  (.+)$') { throw "Invalid checksum entry" }
+            $Actual = (Get-FileHash (Join-Path downloaded $Matches[2]) -Algorithm SHA256).Hash.ToLower()
+            if ($Actual -ne $Matches[1]) { throw "Downloaded asset checksum mismatch: $($Matches[2])" }
+          }
+      - name: Verify native extraction and actual downloaded runtime
+        shell: pwsh
+        run: |
+          Push-Location downloaded
+          $Process = Start-Process ./RVC-Dynamic-F0-Open.exe -ArgumentList "--extract-only", "." -Wait -PassThru
+          if ($Process.ExitCode -ne 0) {
+            if (Test-Path native-extraction-error.txt) { Get-Content native-extraction-error.txt }
+            throw "Native extraction failed"
+          }
+          Push-Location RVC-Dynamic-F0-Ready/RVC-Dynamic-F0
+          ./runtime/python.exe -s -c "import pathlib,sys,torch,tkinter; from infer import rtrvc; assert torch.__version__ == '2.7.1+cu118'; assert pathlib.Path(sys.prefix).resolve() == pathlib.Path('runtime').resolve(); print('Downloaded GPU runtime verified')"
+          if ($LASTEXITCODE -ne 0) { throw "Downloaded runtime check failed" }
+          ./runtime/python.exe -m pytest -q
+          if ($LASTEXITCODE -ne 0) { throw "Downloaded tests failed" }
+          ./runtime/python.exe tools/smoke_editor.py
+          if ($LASTEXITCODE -ne 0) { throw "Downloaded editor check failed" }
+          ./runtime/python.exe tools/smoke_main_gui.py
+          if ($LASTEXITCODE -ne 0) { throw "Downloaded main GUI check failed" }
+          Pop-Location
+          Pop-Location
+      - name: Update public checksums and publish verified release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Copy-Item downloaded/SHA256SUMS.txt SHA256SUMS.txt -Force
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git var GIT_AUTHOR_IDENT
+          git var GIT_COMMITTER_IDENT
+          git add SHA256SUMS.txt
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "Record verified public Windows release checksums"
+            git push
+            if ($LASTEXITCODE -ne 0) { throw "Checksum documentation push failed" }
+          }
+          gh release edit dynamic-f0-v0.1.1 --repo '${{ github.repository }}' --draft=false
+          if ($LASTEXITCODE -ne 0) { throw "Verified release publication failed" }

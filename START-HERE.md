@@ -12,6 +12,8 @@ Open the [public download repository](https://github.com/whyhea1/rvc-dynamic-f0-
 
 Double-click the EXE, choose the extraction folder, and click “Extract and open RVC”. It verifies, joins and extracts the payload, then opens the app; next time use `RVC-Dynamic-F0.exe` inside `RVC-Dynamic-F0-Ready/RVC-Dynamic-F0`.
 
+Download all three files from this same public release. Do not mix the rebuilt public package with the earlier private-release EXE or archive parts, which have different checksums.
+
 Allow at least 15 GB free before downloading if the downloads and extracted app will share one drive. The EXE is unsigned, so Windows may show a SmartScreen warning; nothing in this package disables Windows security.
 
 ## Select your model and tune the curve
@@ -31,3 +33,5 @@ Numerical, archive and interface checks are not a guarantee of naturalness or mi
 选择已有的 `.pth`、对应 `.index`、麦克风和输出设备即可，购买的模型不会被上传或改动。启用 “Dynamic F0” 后打开 “Edit curve” 调整曲线；动态曲线直接决定最终增加的半音数，不会再叠加固定变调。
 
 此公开下载页不需要登录或 token，开发仓库依然保持私有。两个分卷会在解压时进行 SHA-256 检查；若显示校验失败，请重新下载对应分卷，不要关闭校验。
+
+三个文件必须来自同一次公开 Release，不要混用之前私有版的 EXE 或分卷。公开版本经过重新构建，校验值与旧版本可能不同。

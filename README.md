@@ -14,6 +14,8 @@
 
 双击 `RVC-Dynamic-F0-Open.exe`，选择解压位置，点击 “Extract and open RVC”。程序会检查两个分卷的 SHA-256、拼接、解压并打开变声器；以后直接打开 `RVC-Dynamic-F0-Ready/RVC-Dynamic-F0/RVC-Dynamic-F0.exe`。
 
+三个文件必须来自同一次公开 Release，不要混用之前私有版下载的 EXE 或分卷。公开版本经过重新构建，校验值可能不同；`.build` 文件夹只是发布流程的重建输入，不是正常使用的下载入口。
+
 三个文件总共约 3.46 GB，解压后约 6.52 GB，解压过程中还需要临时拼接空间。若下载文件和解压位置在同一个盘，建议开始下载前预留至少 15 GB 空间，并保留原版安装用于对照。
 
 打开后选择已有的 `.pth`、对应 `.index`、麦克风和输出设备。启用 “Dynamic F0”，打开 “Edit curve” 自定义曲线；动态曲线中的数值是最终变调半音数，不会再叠加固定的 +12。
@@ -32,6 +34,8 @@ Download the EXE and both archive parts from the table above, then place them to
 
 Double-click `RVC-Dynamic-F0-Open.exe`, choose an extraction location, and click “Extract and open RVC”. It verifies both parts, joins and extracts the app, and launches it; afterwards use `RVC-Dynamic-F0.exe` inside the extracted app folder.
 
+Use all three files from this same public release, without mixing in the earlier private-release EXE or archive parts. The public package is rebuilt and has its own checksums; repository files under `.build` are build inputs, not the recommended app download.
+
 Select your own voice `.pth` and matching `.index`, microphone, and output device. Enable “Dynamic F0” and open “Edit curve” to tune the pitch-dependent semitone shift, presets, smoothing and optional pitch ceiling; disable it to compare with the original fixed shift.
 
 The downloads total about 3.46 GB and the extracted app is about 6.52 GB. Allow at least 15 GB free before downloading if downloads, temporary extraction data and the app will share one drive; no training or manual PowerShell/Python/pip setup is required.
@@ -46,4 +50,4 @@ The source build passed its Windows archive, runtime-import, GUI smoke and 39 un
 
 See [SHA256SUMS.txt](SHA256SUMS.txt), [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), and the optional `RVC-Dynamic-F0-Licenses-and-Sources.zip` release asset. The source/notices archive is provided for redistribution transparency, not as another installation step; the application source is also present in the GPU payload, without Git history.
 
-This repository contains download documentation and redistribution notices only. It is derived from [upstream RVC](https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI); the separate development repository remains private, and no purchased voice models are included.
+This repository contains download documentation, redistribution notices and self-contained release-build inputs, not development history. It is derived from [upstream RVC](https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI); the separate development repository remains private, and no purchased voice models are included.
