@@ -1,0 +1,9 @@
+*.exe
+*.zip
+*.zip.*
+*.pth
+*.pt
+*.index
+*.bin
+sources/
+.env

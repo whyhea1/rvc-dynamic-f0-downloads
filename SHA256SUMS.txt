@@ -1,0 +1,4 @@
+bfdcdd784c7387ffc89c36033e35b73918c465fdef3bb3beb8d4cd43c3e0d9b4  RVC-Dynamic-F0-Open.exe
+b0ede4e19f68ebac528b5aac1d8cb61a1e8fc8e0a7987f23428164ed88482d91  RVC-Dynamic-F0-Windows-cu118.zip.001
+5357b586f14752a9e2e0ef79311d84b8e0af96d650fa6e45610e5f8af3a02726  RVC-Dynamic-F0-Windows-cu118.zip.002
+cd94a9c720a4291fdbee148e415800ca0a8dfb03866b6c6f805035326b851850  RVC-Dynamic-F0-Licenses-and-Sources.zip
